@@ -23,6 +23,7 @@ import {
   Phone,
   Globe,
   X,
+  Download,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
@@ -68,6 +69,14 @@ type Lead = {
   rating: number | null;
   reviews_count: number | null;
   maps_url: string | null;
+  instagram_url?: string | null;
+  facebook_url?: string | null;
+  youtube_url?: string | null;
+  instagram_details?: string | null;
+  facebook_details?: string | null;
+  youtube_details?: string | null;
+  enrichment_source?: string | null;
+  enriched_at?: string | null;
   notes?: string | null;
   raw?: Record<string, unknown>;
   status: string;
@@ -181,6 +190,7 @@ export default function CampaignDetail() {
 
   async function runScrape() {
     if (!id) return;
+    if (!confirm("Run Apify Google Maps plus paid website, Instagram, Facebook, and YouTube enrichment? Apify will charge credits for venue and social-profile enrichment.")) return;
     setBusyAction("run");
     setErr(null);
     try {
@@ -279,6 +289,43 @@ export default function CampaignDetail() {
     // Leave progress showing for a beat so the user sees the final count,
     // then clear it.
     setTimeout(() => setEnrichProgress(null), 3000);
+  }
+
+  function exportLeadsToExcel() {
+    const cleanName = campaign?.name.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "campaign";
+    const headers = [
+      "venue_name", "category", "email", "phone", "website", "address", "rating", "reviews_count",
+      "google_maps_url", "instagram_url", "facebook_url", "youtube_url", "instagram_details_json",
+      "facebook_details_json", "youtube_details_json", "enrichment_source", "enriched_at", "lead_status",
+      "is_test", "collected_at",
+    ];
+    const rows: Array<Array<string | number>> = leads.map((lead) => [
+      lead.name, lead.category ?? "", lead.email ?? "", lead.phone ?? "", lead.website ?? "", lead.address ?? "",
+      lead.rating ?? "", lead.reviews_count ?? "", lead.maps_url ?? "", lead.instagram_url ?? "",
+      lead.facebook_url ?? "", lead.youtube_url ?? "", lead.instagram_details ?? "", lead.facebook_details ?? "",
+      lead.youtube_details ?? "", lead.enrichment_source ?? (lead.email ? "google_maps_or_apify_contacts" : ""),
+      lead.enriched_at ?? "", lead.status, lead.is_test ? "Yes" : "No", lead.created_at,
+    ]);
+    const xmlEscape = (value: string | number) => String(value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+    const rowXml = (values: Array<string | number>, header = false) => `<Row>${values.map((value) => {
+      const numeric = typeof value === "number";
+      return `<Cell${header ? ' ss:StyleID="Header"' : ""}><Data ss:Type="${numeric ? "Number" : "String"}">${xmlEscape(value)}</Data></Cell>`;
+    }).join("")}</Row>`;
+    const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:x="urn:schemas-microsoft-com:office:excel">
+<Styles><Style ss:ID="Default"><Alignment ss:Vertical="Top"/><Font ss:FontName="Arial" ss:Size="10"/></Style><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1F4E78" ss:Pattern="Solid"/></Style></Styles>
+<Worksheet ss:Name="Venue Leads"><Table>${rowXml(headers, true)}${rows.map((row) => rowXml(row)).join("")}</Table><AutoFilter xmlns="urn:schemas-microsoft-com:office:excel" x:Range="R1C1:R${rows.length + 1}C${headers.length}"/></Worksheet>
+</Workbook>`;
+    const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${cleanName}-venue-leads.xls`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   }
 
   // Derive counters from the emails array — race-free unlike the cached
@@ -462,7 +509,7 @@ export default function CampaignDetail() {
               ? `Apify run ${campaign.apify_status?.toLowerCase() ?? "starting"} — results auto-import`
               : counters && counters.leads > 0
               ? `${counters.leads} leads imported`
-              : "Fetch real businesses from Google Maps"
+              : "Google Maps + websites + Instagram + Facebook + YouTube (paid enrichment)"
           }
           icon={<Play size={16} />}
           tint="primary"
@@ -612,6 +659,14 @@ export default function CampaignDetail() {
             <span className="text-xs font-mono text-white/50">({leads.length})</span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={exportLeadsToExcel}
+              disabled={leads.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/15 hover:bg-green-500/25 border border-green-500/40 text-green-300 text-xs font-bold tracking-wide transition disabled:opacity-40"
+              title="Download feeder-ready Excel workbook"
+            >
+              <Download size={13} /> Export Excel
+            </button>
             {(() => {
               const withoutEmail = leads.filter((l) => !l.email && l.website).length;
               const enriching = enrichProgress !== null && enrichProgress.done < enrichProgress.total;
@@ -623,7 +678,7 @@ export default function CampaignDetail() {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 border border-primary/40 text-primary text-xs font-bold tracking-wide transition disabled:opacity-50"
                 >
                   {enriching ? <Loader2 size={13} className="animate-spin" /> : <Globe size={13} />}
-                  {enriching ? `Finding emails ${enrichProgress!.done}/${enrichProgress!.total}` : `Find emails (${withoutEmail})`}
+                  {enriching ? `Finding emails ${enrichProgress!.done}/${enrichProgress!.total}` : `Retry website emails (${withoutEmail})`}
                 </button>
               );
             })()}

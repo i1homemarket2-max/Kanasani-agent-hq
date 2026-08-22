@@ -367,6 +367,17 @@ async function startApifyGoogleMapsRun(
     maxCrawledPlacesPerSearch: Math.max(5, Math.min(200, Math.ceil(maxResults / Math.max(1, searchTerms.length)))),
     language: "en",
     scrapePlaceDetailPage: true,
+    // Paid Apify enrichment add-ons. These reuse each venue's public website
+    // to discover contact emails and matching public social profiles, then
+    // enrich Instagram, Facebook and YouTube metadata in the same run.
+    scrapeContacts: true,
+    scrapeSocialMediaProfiles: {
+      facebooks: true,
+      instagrams: true,
+      youtubes: true,
+      tiktoks: false,
+      twitters: false,
+    },
     skipClosedPlaces: true,
     allPlacesNoSearchAction: "",
   };
@@ -496,12 +507,67 @@ function extractLeadFromApify(raw: Record<string, unknown>): {
   rating: number | null;
   reviews_count: number | null;
   maps_url: string | null;
+  instagram_url: string | null;
+  facebook_url: string | null;
+  youtube_url: string | null;
+  instagram_details: string | null;
+  facebook_details: string | null;
+  youtube_details: string | null;
+  enrichment_source: string | null;
+  enriched_at: string | null;
 } {
   const r = raw as ApifyLead;
-  const emails = Array.isArray(r.emails) ? r.emails.filter((e) => typeof e === "string" && e.includes("@")) : [];
+  const strings: Array<{ key: string; value: string; parent: unknown }> = [];
+  const visit = (value: unknown, key = "", depth = 0, parent: unknown = null) => {
+    if (depth > 8 || value == null) return;
+    if (typeof value === "string") {
+      strings.push({ key, value, parent });
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, key, depth + 1, value);
+      return;
+    }
+    if (typeof value === "object") {
+      for (const [childKey, child] of Object.entries(value as Record<string, unknown>)) {
+        visit(child, childKey, depth + 1, value);
+      }
+    }
+  };
+  visit(raw);
+
+  const emailRx = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  const emails = new Set<string>();
+  if (Array.isArray(r.emails)) {
+    for (const email of r.emails) if (typeof email === "string" && emailRx.test(email.trim())) emails.add(email.trim().toLowerCase());
+  }
+  for (const item of strings) {
+    if (/email/i.test(item.key) && emailRx.test(item.value.trim())) emails.add(item.value.trim().toLowerCase());
+    for (const match of item.value.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []) {
+      if (!/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(match)) emails.add(match.toLowerCase());
+    }
+  }
+
+  const social = (hostRx: RegExp) => {
+    const hit = strings.find((item) => hostRx.test(item.value));
+    if (!hit) return { url: null, details: null };
+    let details: string | null = null;
+    if (hit.parent && typeof hit.parent === "object") {
+      try {
+        details = JSON.stringify(hit.parent).slice(0, 8000);
+      } catch {
+        details = null;
+      }
+    }
+    return { url: hit.value, details };
+  };
+  const instagram = social(/(?:^|\.)instagram\.com\//i);
+  const facebook = social(/(?:^|\.)(?:facebook|fb)\.com\//i);
+  const youtube = social(/(?:^|\.)(?:youtube\.com|youtu\.be)\//i);
+  const emailList = [...emails];
   return {
     name: String(r.title ?? r.subTitle ?? "Unknown"),
-    email: emails[0] ?? null,
+    email: emailList.find((email) => /^(info|contact|hello|sales|office|events|bookings|enquiries|inquiries)@/i.test(email)) ?? emailList[0] ?? null,
     phone: (r.phone as string | undefined) ?? (r.phoneUnformatted as string | undefined) ?? null,
     website: (r.website as string | undefined) ?? null,
     address: (r.address as string | undefined) ?? null,
@@ -509,6 +575,14 @@ function extractLeadFromApify(raw: Record<string, unknown>): {
     rating: typeof r.totalScore === "number" ? r.totalScore : null,
     reviews_count: typeof r.reviewsCount === "number" ? r.reviewsCount : null,
     maps_url: (r.url as string | undefined) ?? null,
+    instagram_url: instagram.url,
+    facebook_url: facebook.url,
+    youtube_url: youtube.url,
+    instagram_details: instagram.details,
+    facebook_details: facebook.details,
+    youtube_details: youtube.details,
+    enrichment_source: emailList.length > 0 || instagram.url || facebook.url || youtube.url ? "apify_website_social" : null,
+    enriched_at: emailList.length > 0 || instagram.url || facebook.url || youtube.url ? new Date().toISOString() : null,
   };
 }
 
