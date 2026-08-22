@@ -296,10 +296,10 @@ async function generateEmailDraft(
         parts: [{ text: `RECIPIENT\n${leadSummary || "(no data)"}\n\nSENDER\n${senderSummary || "(no context)"}${sequenceBlock}` }],
       },
     ],
-    generationConfig: { temperature: 0.7, responseMimeType: "application/json" },
+    generationConfig: { responseMimeType: "application/json" },
   };
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
   );
   if (!r.ok) {
@@ -547,12 +547,11 @@ async function previewIcpWithGemini(geminiKey: string, userQuery: string, maxRes
       },
     ],
     generationConfig: {
-      temperature: 0.2,
       responseMimeType: "application/json",
     },
   };
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
