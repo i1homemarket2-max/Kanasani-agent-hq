@@ -128,6 +128,7 @@ export default function CampaignDetail() {
   const [emailDetail, setEmailDetail] = useState<EmailRow | null>(null);
   const [generateProgress, setGenerateProgress] = useState<{ done: number; total: number } | null>(null);
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number; found: number } | null>(null);
+  const [scrapeMode, setScrapeMode] = useState<"free" | "full">("free");
 
   useEffect(() => {
     if (!id) return;
@@ -190,13 +191,16 @@ export default function CampaignDetail() {
 
   async function runScrape() {
     if (!id) return;
-    if (!confirm("Run Apify Google Maps plus paid website, Instagram, Facebook, and YouTube enrichment? Apify will charge credits for venue and social-profile enrichment.")) return;
+    const confirmation = scrapeMode === "full"
+      ? "Run FULL enrichment? Apify will charge additional credits for website, Instagram, Facebook, and YouTube profile enrichment."
+      : "Run FREE-MODE Google Maps scraping? This avoids paid social enrichment and uses only your Apify free-plan credits.";
+    if (!confirm(confirmation)) return;
     setBusyAction("run");
     setErr(null);
     try {
       // This call returns quickly now — it only *starts* the Apify run.
       // The sync poller effect will import leads once the run finishes.
-      await call("outreach.campaign.run", { id });
+      await call("outreach.campaign.run", { id, enrichment_mode: scrapeMode });
       await refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Scrape failed to start");
@@ -492,6 +496,18 @@ export default function CampaignDetail() {
       </GlassCard>
 
       {/* Action bar */}
+      <div className="mb-3 flex items-center justify-end gap-2">
+        <span className="text-xs text-white/50 font-mono">Scraping mode</span>
+        <select
+          value={scrapeMode}
+          disabled={busyAction !== null || campaign.status === "searching"}
+          onChange={(e) => setScrapeMode(e.target.value as "free" | "full")}
+          className="rounded-lg bg-black/40 border border-white/15 px-3 py-2 text-xs text-white"
+        >
+          <option value="free">Free mode · Google Maps only</option>
+          <option value="full">Full mode · websites + Instagram + Facebook + YouTube</option>
+        </select>
+      </div>
       <div className={`grid gap-3 mb-5 ${sequenceInfo.isSequence ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 md:grid-cols-3"}`}>
         <ActionButton
           disabled={busyAction !== null || !structured || campaign.status === "searching"}
@@ -509,7 +525,9 @@ export default function CampaignDetail() {
               ? `Apify run ${campaign.apify_status?.toLowerCase() ?? "starting"} — results auto-import`
               : counters && counters.leads > 0
               ? `${counters.leads} leads imported`
-              : "Google Maps + websites + Instagram + Facebook + YouTube (paid enrichment)"
+              : scrapeMode === "full"
+              ? "Google Maps + websites + Instagram + Facebook + YouTube (paid)"
+              : "Google Maps only · protects free-plan credits"
           }
           icon={<Play size={16} />}
           tint="primary"

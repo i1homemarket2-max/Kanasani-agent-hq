@@ -45,6 +45,12 @@ type ServiceKey = "gemini" | "apify" | "agentmail";
 const SERVICE_KEYS: ServiceKey[] = ["gemini", "apify", "agentmail"];
 
 type ServiceConfigRecord = { key: string; updated_at: string; last_test?: { ok: boolean; at: string; message?: string } };
+type GeminiModel = "gemini-3.6-flash" | "gemini-3.5-flash-lite";
+
+async function readGeminiModel(): Promise<GeminiModel> {
+  const rec = await readJson<{ model?: GeminiModel }>(store(SERVICE_CONFIG), "gemini-model");
+  return rec?.model === "gemini-3.5-flash-lite" ? rec.model : "gemini-3.6-flash";
+}
 
 // Redact a stored key for display — keep first 4 and last 4 chars so the
 // user can visually confirm it's theirs without exposing the full secret.
@@ -252,6 +258,7 @@ async function generateEmailDraft(
   senderContext: { sender_name?: string; sender_company?: string; sender_offer?: string; campaign_query?: string },
   sequence: SequenceContext = {},
 ): Promise<EmailDraft> {
+  const model = await readGeminiModel();
   const leadSummary = [
     lead.name ? `Business: ${lead.name}` : null,
     lead.company && lead.company !== lead.name ? `Company: ${lead.company}` : null,
@@ -299,7 +306,7 @@ async function generateEmailDraft(
     generationConfig: { responseMimeType: "application/json" },
   };
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
   );
   if (!r.ok) {
@@ -360,7 +367,9 @@ async function startApifyGoogleMapsRun(
   searchTerms: string[],
   location: string,
   maxResults: number,
+  enrichmentMode: "free" | "full" = "free",
 ): Promise<{ runId: string; defaultDatasetId: string | null; status: string }> {
+  const fullEnrichment = enrichmentMode === "full";
   const input = {
     searchStringsArray: searchTerms,
     locationQuery: location,
@@ -370,11 +379,11 @@ async function startApifyGoogleMapsRun(
     // Paid Apify enrichment add-ons. These reuse each venue's public website
     // to discover contact emails and matching public social profiles, then
     // enrich Instagram, Facebook and YouTube metadata in the same run.
-    scrapeContacts: true,
+    scrapeContacts: fullEnrichment,
     scrapeSocialMediaProfiles: {
-      facebooks: true,
-      instagrams: true,
-      youtubes: true,
+      facebooks: fullEnrichment,
+      instagrams: fullEnrichment,
+      youtubes: fullEnrichment,
       tiktoks: false,
       twitters: false,
     },
@@ -606,6 +615,7 @@ Rules:
 - Always return valid JSON. No trailing commas. Double-quoted strings only.`;
 
 async function previewIcpWithGemini(geminiKey: string, userQuery: string, maxResultsHint?: number): Promise<StructuredQuery> {
+  const model = await readGeminiModel();
   const body = {
     systemInstruction: { role: "system", parts: [{ text: PREVIEW_SYSTEM_PROMPT }] },
     contents: [
@@ -625,7 +635,7 @@ async function previewIcpWithGemini(geminiKey: string, userQuery: string, maxRes
     },
   };
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -977,6 +987,20 @@ export const handler: Handler = async (event) => {
         if (service === "gemini") await store(VOICE_CONFIG).delete("config");
         return ok({ cleared: true });
       }
+      case "config.gemini_model.get": {
+        return ok({ model: await readGeminiModel() });
+      }
+      case "config.gemini_model.set": {
+        const { model } = params as Record<string, unknown>;
+        if (model !== "gemini-3.6-flash" && model !== "gemini-3.5-flash-lite") {
+          return fail(400, "model must be gemini-3.6-flash or gemini-3.5-flash-lite");
+        }
+        await writeJson(store(SERVICE_CONFIG), "gemini-model", {
+          model,
+          updated_at: new Date().toISOString(),
+        });
+        return ok({ model });
+      }
 
       // ── VOICE SESSIONS (past conversation transcripts) ────────────
       case "voice.session.save": {
@@ -1250,8 +1274,9 @@ export const handler: Handler = async (event) => {
         // Netlify's ~26s function cap means we can't block on a scrape
         // that typically runs 30s–3min. The client polls
         // outreach.campaign.sync to drive the state transition to "ready".
-        const { id } = params as Record<string, string>;
+        const { id, enrichment_mode = "free" } = params as Record<string, string>;
         if (!id) return fail(400, "id required");
+        if (enrichment_mode !== "free" && enrichment_mode !== "full") return fail(400, "enrichment_mode must be free or full");
         const s = store(OUTREACH_CAMPAIGNS);
         const campaign = await readJson<Record<string, unknown>>(s, id);
         if (!campaign) return fail(404, "campaign not found");
@@ -1266,6 +1291,7 @@ export const handler: Handler = async (event) => {
             structured.searchTerms,
             structured.location,
             structured.maxResults,
+            enrichment_mode,
           );
           const updated = {
             ...campaign,
@@ -1275,6 +1301,7 @@ export const handler: Handler = async (event) => {
             apify_status: run.status,
             error_message: null,
             last_run_at: new Date().toISOString(),
+            enrichment_mode,
             updated_at: new Date().toISOString(),
           };
           await writeJson(s, id, updated);

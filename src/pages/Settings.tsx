@@ -15,6 +15,7 @@ type ServiceStatus = {
 };
 
 type ConfigStatus = Record<ServiceKey, ServiceStatus>;
+type GeminiModel = "gemini-3.6-flash" | "gemini-3.5-flash-lite";
 
 const SERVICE_META: Record<ServiceKey, { title: string; summary: string; url: string; urlLabel: string; accent: string }> = {
   gemini: {
@@ -45,6 +46,8 @@ export default function Settings() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [busy, setBusy] = useState<ServiceKey | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [geminiModel, setGeminiModel] = useState<GeminiModel>("gemini-3.6-flash");
+  const [modelBusy, setModelBusy] = useState(false);
 
   useEffect(() => {
     void refresh();
@@ -52,9 +55,27 @@ export default function Settings() {
 
   async function refresh() {
     try {
-      setStatus(await call<ConfigStatus>("config.status"));
+      const [nextStatus, model] = await Promise.all([
+        call<ConfigStatus>("config.status"),
+        call<{ model: GeminiModel }>("config.gemini_model.get"),
+      ]);
+      setStatus(nextStatus);
+      setGeminiModel(model.model);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load status");
+    }
+  }
+
+  async function changeGeminiModel(model: GeminiModel) {
+    setModelBusy(true);
+    setErr(null);
+    try {
+      await call("config.gemini_model.set", { model });
+      setGeminiModel(model);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not change Gemini model");
+    } finally {
+      setModelBusy(false);
     }
   }
 
@@ -112,6 +133,26 @@ export default function Settings() {
       )}
 
       <div className="grid gap-4">
+        <GlassCard className="bg-gradient-to-br from-primary/10 to-primary/[0.03] border-primary/30">
+          <div className="flex items-center gap-5">
+            <div className="flex-1">
+              <h3 className="font-display text-lg font-bold text-white mb-1">Gemini model</h3>
+              <p className="text-sm text-white/65">Flash Lite uses the smallest free-tier model. Gemini only plans searches and drafts emails; Apify performs the scraping.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {modelBusy && <Loader2 size={14} className="animate-spin text-primary" />}
+              <select
+                value={geminiModel}
+                disabled={modelBusy}
+                onChange={(e) => void changeGeminiModel(e.target.value as GeminiModel)}
+                className="rounded-lg bg-black/40 border border-primary/40 px-3 py-2 text-sm text-white"
+              >
+                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite · free/lowest cost</option>
+                <option value="gemini-3.6-flash">Gemini 3.6 Flash · higher quality</option>
+              </select>
+            </div>
+          </div>
+        </GlassCard>
         {services.map((s) => {
           const meta = SERVICE_META[s];
           const svc = status?.[s];
