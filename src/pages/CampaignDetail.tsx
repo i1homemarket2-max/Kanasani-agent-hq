@@ -31,6 +31,7 @@ import Modal, { FormField, PrimaryButton, TextInput, TextArea } from "@/componen
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { call } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 type Campaign = {
   id: string;
@@ -130,46 +131,24 @@ export default function CampaignDetail() {
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number; found: number } | null>(null);
   const [scrapeMode, setScrapeMode] = useState<"free" | "full">("free");
 
-  useEffect(() => {
-    if (!id) return;
-    void refresh();
-    // Light polling so counters tick live when webhooks arrive.
-    const t = setInterval(refresh, 6000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  useUltraSaverPolling(refresh, { enabled: !!id });
 
   // When a scrape is running on Apify's side, poll the sync action every
   // 4s so we import leads as soon as Apify finishes. Separate from the
   // general refresh interval so we can drive a tighter loop only when
   // we're actively waiting on Apify.
-  useEffect(() => {
+  useUltraSaverPolling(async () => {
     if (!id) return;
-    if (campaign?.status !== "searching") return;
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      try {
-        const result = await call<{ status: string; apify_status: string | null; changed: boolean }>(
-          "outreach.campaign.sync",
-          { id },
-        );
-        if (!cancelled && result.changed) {
-          // Terminal state — refresh immediately to pull in leads/status.
-          await refresh();
-        }
-      } catch {
-        // Quiet — the regular refresh will surface persistent errors.
-      }
-    };
-    void tick();
-    const t = setInterval(tick, 4000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, campaign?.status]);
+    try {
+      const result = await call<{ status: string; apify_status: string | null; changed: boolean }>(
+        "outreach.campaign.sync",
+        { id },
+      );
+      if (result.changed) await refresh();
+    } catch {
+      // Quiet — the regular refresh will surface persistent errors.
+    }
+  }, { enabled: !!id && campaign?.status === "searching", intervalMs: 15_000 });
 
   async function refresh() {
     if (!id) return;

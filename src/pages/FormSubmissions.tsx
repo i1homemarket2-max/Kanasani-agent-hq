@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Copy, ExternalLink, Inbox, RefreshCw } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
@@ -6,6 +6,7 @@ import GlassCard from "@/components/GlassCard";
 import { call } from "@/lib/api";
 import { copyToClipboard, timeAgo } from "@/lib/utils";
 import type { FormConfig, FormSubmission } from "@/lib/types";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 export default function FormSubmissions() {
   const { slug } = useParams();
@@ -14,12 +15,7 @@ export default function FormSubmissions() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!slug) return;
-    void refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
-  }, [slug]);
+  useUltraSaverPolling(refresh, { enabled: !!slug });
 
   async function refresh() {
     if (!slug) return;

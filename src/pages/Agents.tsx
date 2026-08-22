@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Plus, Copy, Eye, EyeOff, AtSign, Trash2 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
@@ -7,6 +7,7 @@ import RegisterAgentModal from "@/components/RegisterAgentModal";
 import { call } from "@/lib/api";
 import { timeAgo, hasRegisteredRealAgent, copyToClipboard } from "@/lib/utils";
 import type { Agent } from "@/lib/types";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 const SEED: Agent[] = [
   { id: "a1", name: "Atlas", sign_in_name: "atlas-a1b2", api_key: "akey_demo_atlas_executive_assistant_x1", role: "Executive Assistant", emoji: "🧭", color: "#00BFFF", status: "online", last_heartbeat: new Date().toISOString(), created_at: "" },
@@ -21,11 +22,7 @@ export default function Agents() {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
-  }, []);
+  useUltraSaverPolling(refresh);
 
   async function refresh() {
     try {

@@ -112,7 +112,7 @@ export default function Settings() {
     <>
       <PageHeader
         title="Settings"
-        subtitle="Your third-party API keys. All stored in your own Netlify Blobs — never leave your deployment."
+        subtitle="Ultra Saver is enabled: hidden tabs make zero polling requests and idle pages refresh once per minute."
         right={
           <button
             onClick={() => setWizardOpen(true)}

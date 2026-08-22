@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Plus, Copy, Sparkles, Calendar, CreditCard, GitPullRequest, Mail } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
@@ -6,17 +6,14 @@ import NewWebhookModal from "@/components/NewWebhookModal";
 import { call } from "@/lib/api";
 import { copyToClipboard } from "@/lib/utils";
 import type { Webhook } from "@/lib/types";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 export default function Webhooks() {
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(refresh, 10_000);
-    return () => clearInterval(t);
-  }, []);
+  useUltraSaverPolling(refresh);
 
   async function refresh() {
     try {

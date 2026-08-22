@@ -1,19 +1,16 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { PhoneCall, X } from "lucide-react";
 import { call } from "@/lib/api";
 import type { VoiceInvitation } from "@/lib/types";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 export default function VoiceInvitationBanner() {
   const [invitations, setInvitations] = useState<VoiceInvitation[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
 
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(refresh, 8000);
-    return () => clearInterval(t);
-  }, []);
+  useUltraSaverPolling(refresh);
 
   async function refresh() {
     try {

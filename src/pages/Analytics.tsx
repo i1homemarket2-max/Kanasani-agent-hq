@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   BarChart3,
@@ -17,6 +17,7 @@ import GlassCard from "@/components/GlassCard";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { call } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 type Totals = {
   campaigns: number;
@@ -45,11 +46,7 @@ export default function Analytics() {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(refresh, 8000);
-    return () => clearInterval(t);
-  }, []);
+  useUltraSaverPolling(refresh);
 
   async function refresh() {
     try {

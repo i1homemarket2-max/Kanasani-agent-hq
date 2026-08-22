@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
 import { call } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 import type { Activity as Entry } from "@/lib/types";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 const CATEGORY_STYLE: Record<string, string> = {
   task: "text-primary border-primary/40",
@@ -27,11 +28,7 @@ const SEED: Entry[] = [
 export default function Activity() {
   const [log, setLog] = useState<Entry[]>([]);
 
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
-  }, []);
+  useUltraSaverPolling(refresh);
 
   async function refresh() {
     try {

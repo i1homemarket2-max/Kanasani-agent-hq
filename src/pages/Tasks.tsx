@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -16,6 +16,7 @@ import TaskQuickAdd from "@/components/TaskQuickAdd";
 import { call } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Task, TaskStatus } from "@/lib/types";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 const COLUMNS: { status: TaskStatus; label: string; accent: string }[] = [
   { status: "todo", label: "To Do", accent: "from-white/10 to-white/0" },
@@ -42,11 +43,7 @@ export default function Tasks() {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
 
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
-  }, []);
+  useUltraSaverPolling(refresh);
 
   async function refresh() {
     try {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Users, KanbanSquare, Activity as ActivityIcon, Zap } from "lucide-react";
 import GlassCard from "@/components/GlassCard";
 import MetricCard from "@/components/MetricCard";
@@ -7,6 +7,7 @@ import PageHeader from "@/components/PageHeader";
 import { call } from "@/lib/api";
 import { timeAgo, hasRegisteredRealAgent } from "@/lib/utils";
 import type { Agent, Activity, Task } from "@/lib/types";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 // ── Demo seed so empty deploy looks alive ────────────────────────────
 const SEED_AGENTS: Agent[] = [
@@ -44,11 +45,7 @@ export default function Office() {
   // "flash of seed data" that used to happen on every Office page load.
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
-  }, []);
+  useUltraSaverPolling(refresh);
 
   async function refresh() {
     const [a, l, t] = await Promise.all([

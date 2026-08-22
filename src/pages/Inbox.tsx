@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Inbox as InboxIcon, Loader2, MessageSquare, KanbanSquare, AlertCircle } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
 import { call } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
+import { useUltraSaverPolling } from "@/lib/useUltraSaverPolling";
 
 type Reply = {
   id: string;
@@ -27,11 +28,7 @@ export default function Inbox() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(refresh, 6000);
-    return () => clearInterval(t);
-  }, []);
+  useUltraSaverPolling(refresh);
 
   async function refresh() {
     try {

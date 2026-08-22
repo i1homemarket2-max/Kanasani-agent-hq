@@ -18,8 +18,8 @@ import type { Activity, ActivityCategory } from "@/lib/types";
 
 /**
  * LiveAgentFeed — floating bottom-right ticker that shows agent/user
- * actions as they happen. Polls activity.list every 1.5s when the tab
- * is focused, pauses when hidden. Clicking an entry navigates to the
+ * actions as they happen. Ultra Saver polls at most every 15s during
+ * recent activity and every 60s while idle, with zero hidden-tab calls.
  * relevant surface if we can infer one from details.
  *
  * This is the "watch Max work" surface. Every action that calls
@@ -79,13 +79,12 @@ export default function LiveAgentFeed() {
       // Skip the fetch when the tab is hidden — saves invocations and
       // matches the user's actual attention.
       if (typeof document !== "undefined" && document.hidden) {
-        pollRef.current = setTimeout(tick, 3000);
         return;
       }
       if (paused) {
-        pollRef.current = setTimeout(tick, 1500);
         return;
       }
+      let nextDelay = 60_000;
       try {
         const fresh = await call<Activity[]>("activity.list", { limit: 20 });
         if (cancelled) return;
@@ -99,6 +98,7 @@ export default function LiveAgentFeed() {
 
         // Detect a newly-arrived entry so we can flash the top card.
         const top = merged[0];
+        if (top && Date.now() - Date.parse(top.created_at) < ACTIVE_WINDOW_MS) nextDelay = 15_000;
         if (top && !seenIds.has(top.id)) {
           setNewestId(top.id);
           setSeenIds((prev) => {
@@ -112,10 +112,6 @@ export default function LiveAgentFeed() {
       } catch {
         // Silently retry — network hiccups shouldn't break the feed.
       }
-      // Tighten polling when there's been recent activity.
-      const mostRecent = entries[0] ? Date.parse(entries[0].created_at) : 0;
-      const active = Date.now() - mostRecent < ACTIVE_WINDOW_MS;
-      const nextDelay = active ? 1500 : 4000;
       pollRef.current = setTimeout(tick, nextDelay);
     }
 
@@ -242,8 +238,8 @@ export default function LiveAgentFeed() {
           {paused
             ? "Paused — click play to resume"
             : isActive
-            ? "Polling every 1.5s"
-            : "Polling every 4s · active mode when agents work"}
+            ? "Ultra Saver · every 15s during activity"
+            : "Ultra Saver · every 60s · hidden tabs paused"}
         </div>
       </div>
     </div>
