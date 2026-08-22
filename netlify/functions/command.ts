@@ -373,7 +373,7 @@ async function startApifyGoogleMapsRun(
   const input = {
     searchStringsArray: searchTerms,
     locationQuery: location,
-    maxCrawledPlacesPerSearch: Math.max(5, Math.min(200, Math.ceil(maxResults / Math.max(1, searchTerms.length)))),
+    maxCrawledPlacesPerSearch: Math.max(5, Math.min(500, Math.ceil(maxResults / Math.max(1, searchTerms.length)))),
     language: "en",
     scrapePlaceDetailPage: true,
     // Paid Apify enrichment add-ons. These reuse each venue's public website
@@ -595,6 +595,32 @@ function extractLeadFromApify(raw: Record<string, unknown>): {
   };
 }
 
+function leadDedupKeys(lead: Record<string, unknown>): string[] {
+  const raw = (lead.raw && typeof lead.raw === "object" ? lead.raw : lead) as Record<string, unknown>;
+  const clean = (value: unknown) => String(value ?? "").trim().toLowerCase();
+  const compact = (value: unknown) => clean(value).replace(/[^a-z0-9]/g, "");
+  const keys = new Set<string>();
+  const placeId = clean(raw.placeId ?? raw.place_id);
+  if (placeId) keys.add(`place:${placeId}`);
+
+  const mapsUrl = clean(lead.maps_url ?? raw.url ?? raw.mapsUrl);
+  if (mapsUrl) {
+    try {
+      const parsed = new URL(mapsUrl);
+      keys.add(`maps:${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}`);
+    } catch {
+      keys.add(`maps:${mapsUrl.split("?")[0].replace(/\/$/, "")}`);
+    }
+  }
+
+  const phone = compact(lead.phone ?? raw.phone ?? raw.phoneUnformatted);
+  if (phone.length >= 7) keys.add(`phone:${phone}`);
+  const name = compact(lead.name ?? raw.title ?? raw.subTitle);
+  const address = compact(lead.address ?? raw.address);
+  if (name && address) keys.add(`name-address:${name}|${address}`);
+  return [...keys];
+}
+
 // ── OUTREACH helpers ───────────────────────────────────────────────
 // Turns a free-text ICP description into a structured query the Apify
 // Google Maps scraper can run. We ask Gemini for JSON only, validate the
@@ -611,7 +637,7 @@ Output ONLY a JSON object with this exact shape — no prose, no markdown, no co
 Rules:
 - "location" = the geographic target the user described. If multiple cities, pick the primary one. If the user named a region/metro, pick a representative anchor city (e.g. "San Francisco Bay Area" -> "San Francisco, CA").
 - "searchTerms" = 1–5 distinct business-type queries. Each should be a short phrase a human would type into Google Maps. DO NOT append the location to the search term — that's the "location" field's job. Expand synonyms the user implied (e.g. "law firms" -> "personal injury lawyer", "family lawyer" if context warrants).
-- "maxResults" = clamp the user-requested number into [10, 200]. If unspecified, use 50.
+- "maxResults" = clamp the user-requested number into [10, 500]. If unspecified, use 200.
 - Always return valid JSON. No trailing commas. Double-quoted strings only.`;
 
 async function previewIcpWithGemini(geminiKey: string, userQuery: string, maxResultsHint?: number): Promise<StructuredQuery> {
@@ -665,8 +691,8 @@ async function previewIcpWithGemini(geminiKey: string, userQuery: string, maxRes
   const location = typeof obj.location === "string" && obj.location.trim() ? obj.location.trim() : "Unknown";
   const terms = Array.isArray(obj.searchTerms) ? obj.searchTerms.filter((t) => typeof t === "string" && t.trim()) : [];
   const searchTerms = terms.length > 0 ? terms.map((t) => (t as string).trim()).slice(0, 5) : [userQuery.slice(0, 80)];
-  const rawMax = typeof obj.maxResults === "number" ? obj.maxResults : maxResultsHint ?? 50;
-  const maxResults = Math.max(10, Math.min(200, Math.round(rawMax)));
+  const rawMax = typeof obj.maxResults === "number" ? obj.maxResults : maxResultsHint ?? 200;
+  const maxResults = Math.max(10, Math.min(500, Math.round(rawMax)));
   return { location, searchTerms, maxResults };
 }
 
@@ -1354,9 +1380,18 @@ export const handler: Handler = async (event) => {
             const structured = campaign.structured_query as StructuredQuery;
             const items = await getApifyDatasetItems(apifyKey, datasetId, structured.maxResults);
             const leadsStore = store(OUTREACH_LEADS);
+            const existingLeads = await listJson<Record<string, unknown>>(leadsStore, `${id}/`);
+            const seenKeys = new Set(existingLeads.flatMap(leadDedupKeys));
             let imported = 0;
+            let duplicatesSkipped = 0;
             for (const raw of items) {
               const extracted = extractLeadFromApify(raw);
+              const candidate = { ...extracted, raw } as Record<string, unknown>;
+              const candidateKeys = leadDedupKeys(candidate);
+              if (candidateKeys.some((key) => seenKeys.has(key))) {
+                duplicatesSkipped++;
+                continue;
+              }
               const leadId = nanoid(10);
               const createdAt = new Date().toISOString();
               await writeJson(leadsStore, `${id}/${createdAt}-${leadId}`, {
@@ -1369,6 +1404,7 @@ export const handler: Handler = async (event) => {
                 tags: [],
                 created_at: createdAt,
               });
+              for (const key of candidateKeys) seenKeys.add(key);
               imported++;
             }
             // Preserve any test leads that were added while scrape was running
@@ -1381,16 +1417,17 @@ export const handler: Handler = async (event) => {
               apify_status: runStatus.status,
               total_leads_found: items.length,
               leads_imported: totalAfter,
+              duplicates_skipped: Number(campaign.duplicates_skipped ?? 0) + duplicatesSkipped,
               updated_at: new Date().toISOString(),
             };
             await writeJson(s, id, updated);
             await logActivity({
               agent_id: identity?.kind === "agent" ? identity.agent_id : null,
               category: "research",
-              summary: `Apify scrape complete: ${imported} leads imported for "${campaign.name}"`,
-              details: { campaign_id: id, imported },
+              summary: `Apify scrape complete: ${imported} unique leads imported, ${duplicatesSkipped} duplicates skipped for "${campaign.name}"`,
+              details: { campaign_id: id, imported, duplicates_skipped: duplicatesSkipped },
             });
-            return ok({ status: "ready", apify_status: runStatus.status, imported, changed: true });
+            return ok({ status: "ready", apify_status: runStatus.status, imported, duplicates_skipped: duplicatesSkipped, changed: true });
           }
 
           if (["FAILED", "ABORTED", "TIMED-OUT"].includes(runStatus.status)) {

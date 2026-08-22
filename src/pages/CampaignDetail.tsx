@@ -274,6 +274,19 @@ export default function CampaignDetail() {
     setTimeout(() => setEnrichProgress(null), 3000);
   }
 
+  async function updateLeadLimit(value: number) {
+    if (!id || !campaign?.structured_query || campaign.status === "searching") return;
+    const structured_query = { ...campaign.structured_query, maxResults: value };
+    setCampaign({ ...campaign, structured_query });
+    setErr(null);
+    try {
+      await call("outreach.campaign.update", { id, structured_query });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to update lead limit");
+      await refresh();
+    }
+  }
+
   function exportLeadsToExcel() {
     const cleanName = campaign?.name.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "campaign";
     const headers = [
@@ -476,6 +489,16 @@ export default function CampaignDetail() {
 
       {/* Action bar */}
       <div className="mb-3 flex items-center justify-end gap-2">
+        <span className="text-xs text-white/50 font-mono">Lead limit</span>
+        <select
+          value={structured?.maxResults ?? 200}
+          disabled={busyAction !== null || campaign.status === "searching"}
+          onChange={(e) => void updateLeadLimit(Number(e.target.value))}
+          className="rounded-lg bg-black/40 border border-white/15 px-3 py-2 text-xs text-white"
+          title="Higher limits consume more Apify credits"
+        >
+          {[50, 100, 200, 300, 500].map((limit) => <option key={limit} value={limit}>{limit} leads</option>)}
+        </select>
         <span className="text-xs text-white/50 font-mono">Scraping mode</span>
         <select
           value={scrapeMode}

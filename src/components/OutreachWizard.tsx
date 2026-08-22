@@ -20,7 +20,7 @@ export default function OutreachWizard({ open, onClose, onCreated }: Props) {
   const [step, setStep] = useState<Step>("input");
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
-  const [maxResults, setMaxResults] = useState(50);
+  const [maxResults, setMaxResults] = useState(200);
   const [description, setDescription] = useState("");
   const [preview, setPreview] = useState<StructuredQuery | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,7 +30,7 @@ export default function OutreachWizard({ open, onClose, onCreated }: Props) {
     setStep("input");
     setName("");
     setQuery("");
-    setMaxResults(50);
+    setMaxResults(200);
     setDescription("");
     setPreview(null);
     setError(null);
@@ -114,13 +114,13 @@ export default function OutreachWizard({ open, onClose, onCreated }: Props) {
           </FormField>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Max results" hint="Clamped to 10–200.">
+            <FormField label="Max results" hint="10–500. Higher limits use more Apify credits.">
               <TextInput
                 type="number"
                 min={10}
-                max={200}
+                max={500}
                 value={maxResults}
-                onChange={(e) => setMaxResults(Math.max(10, Math.min(200, Number(e.target.value))))}
+                onChange={(e) => setMaxResults(Math.max(10, Math.min(500, Number(e.target.value))))}
               />
             </FormField>
             <FormField label="Description (optional)" hint="Internal note.">
